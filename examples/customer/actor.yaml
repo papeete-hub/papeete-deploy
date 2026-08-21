@@ -1,0 +1,4 @@
+manifest: papeete-actor-manifest/v0
+name: customer
+description: >-
+  Orders from the waiter and eats.

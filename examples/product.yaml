@@ -1,0 +1,10 @@
+product: table-service
+version: "0.1.0"
+environment: local
+actors:
+  - name: customer
+    label: alpha
+    version: latest
+  - name: waiter
+    label: alpha
+    version: latest

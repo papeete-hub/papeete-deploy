@@ -1,0 +1,4 @@
+manifest: papeete-actor-manifest/v0
+name: waiter
+description: >-
+  Takes orders and answers when asked who they're from.

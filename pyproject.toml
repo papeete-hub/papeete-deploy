@@ -1,0 +1,45 @@
+[project]
+name = "papeete-deploy"
+version = "0.1.0"
+description = "Resolves a papeete-product's declared version queries against a real registry, and deploys the result — starting with local Docker Compose."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Papeete Consulting", email = "yoann.remy@outlook.com" }]
+license = "MIT"
+keywords = ["governance", "deployment", "actor-model", "docker", "compose"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "papeete-product>=0.1.0",
+    "papeete-version>=0.1.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+papeete-deploy = "papeete_deploy.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: spawns real Docker containers (test_e2e_deploy.py) — needs a Docker daemon; deselect with -m 'not e2e' when none is available.",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/papeete_deploy"]
+
+# papeete-product has no PyPI release yet — resolved from its sibling checkout for local dev.
+# Remove this override once papeete-product publishes; the PyPI dependency above already names
+# the real constraint.
+[tool.uv.sources]
+papeete-product = { path = "../papeete-product", editable = true }

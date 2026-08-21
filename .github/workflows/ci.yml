@@ -1,0 +1,28 @@
+name: ci
+on: [push, pull_request]
+
+# NOTE: papeete-product has no PyPI release yet (pyproject.toml's [tool.uv.sources] resolves it
+# from a sibling checkout), so CI checks out papeete-hub/papeete-product as a sibling directory
+# too. This job only goes green once that repo also has a GitHub remote — see the open question
+# raised alongside this file.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: papeete-deploy
+      - uses: actions/checkout@v4
+        with:
+          repository: papeete-hub/papeete-product
+          path: papeete-product
+      - uses: astral-sh/setup-uv@v5
+      - name: the gate suite
+        # Includes the e2e suite (marked `e2e`) — GitHub's ubuntu-latest runners ship Docker,
+        # so the real resolve-and-run path is exercised here too, not just the offline suite.
+        working-directory: papeete-deploy
+        run: uv run --extra dev pytest -q
+      - name: build
+        working-directory: papeete-deploy
+        run: uv build
