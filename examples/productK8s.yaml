@@ -1,10 +1,15 @@
 product: table-service
 version: "0.1.0"
-environment: local
+environment:
+  type: k8s
+  name: papeete-deploy-example
+  k8sName: docker-desktop
 actors:
   - name: customer
     label: alpha
     version: latest
+    recipe: develop
   - name: waiter
     label: alpha
     version: latest
+    recipe: develop

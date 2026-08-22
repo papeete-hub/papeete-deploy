@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waiter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: waiter
+  template:
+    metadata:
+      labels:
+        app: waiter
+    spec:
+      containers:
+        - name: waiter
+          image: waiter
+          ports:
+            - containerPort: 8080

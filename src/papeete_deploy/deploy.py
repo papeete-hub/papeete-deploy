@@ -21,6 +21,8 @@ from papeete_product import product as pp
 from papeete_version import npm_range
 from papeete_version import version as pv
 
+from . import actor_source as actor_source_mod
+from . import k8s
 from .registry import Registry
 
 PORT = 8080
@@ -163,3 +165,54 @@ def port(project: str, name: str, container_port: int = PORT) -> int:
         check=True, capture_output=True, text=True,
     ).stdout.strip().splitlines()[0]
     return int(out.rsplit(":", 1)[-1])
+
+
+# ── deploy/undeploy: dispatch on environment.type ────────────────────────────────────────────
+
+def deploy(product_path: Path | str, registry: Registry,
+           actor_source: actor_source_mod.Settings | None = None) -> tuple[str, str]:
+    """Resolve every actor a product names, then make it real wherever `environment` says.
+    Returns `(env_type, project_or_namespace)`. `actor_source` locates each k8s-targeted actor's
+    own deploy folder (`actor_source.py`) — defaults to that module's own CLI/env/config/
+    convention layering if not given, so a caller that doesn't care can just pass a registry."""
+    product_path = Path(product_path)
+    product = yaml.safe_load(product_path.read_text())
+    env = product["environment"]
+
+    if env["type"] == "local":
+        return "local", up(product_path, registry)
+
+    if env["type"] == "k8s":
+        settings = actor_source or actor_source_mod.load_settings(product_path)
+        resolved = {a["name"]: a["version"] for a in resolve_versions(product_path, registry)}
+        clones: dict = {}
+
+        # validate every actor's deploy folder + overlay exists BEFORE applying any of them
+        plan = []
+        for actor in pp.resolve(product_path):
+            deploy_folder = actor_source_mod.resolve_actor_folder(actor["name"], settings, clones)
+            overlay = k8s._overlay_dir(deploy_folder, actor["recipe"])
+            plan.append((actor["name"], deploy_folder, actor["recipe"], overlay))
+
+        for name, deploy_folder, recipe, _overlay in plan:
+            k8s.apply(env["k8sName"], env["name"], deploy_folder, recipe, normalize(name),
+                      resolved[name], product["product"])
+        return "k8s", env["name"]
+
+    raise ValueError(f"unknown environment.type '{env['type']}'")
+
+
+def undeploy(product_path: Path | str) -> None:
+    """Tear down what `deploy()` started, wherever `environment` says it went."""
+    product = yaml.safe_load(Path(product_path).read_text())
+    env = product["environment"]
+
+    if env["type"] == "local":
+        down(product_path)
+        return
+
+    if env["type"] == "k8s":
+        k8s.delete(env["k8sName"], env["name"], product["product"])
+        return
+
+    raise ValueError(f"unknown environment.type '{env['type']}'")

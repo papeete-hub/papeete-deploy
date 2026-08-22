@@ -8,7 +8,7 @@ npm-range, label-embodied) without needing Docker at all — see `test_registry.
 import pytest
 import yaml
 
-from papeete_deploy import deploy
+from papeete_deploy import deploy, k8s
 
 
 class FakeRegistry:
@@ -19,7 +19,7 @@ class FakeRegistry:
         return self._tags.get(name, [])
 
 
-def write_product(tmp_path, actors, environment="local"):
+def write_product(tmp_path, actors, environment={"type": "local", "name": "local"}):
     path = tmp_path / "product.yaml"
     path.write_text(yaml.safe_dump(
         {"product": "demo", "version": "0.1.0", "environment": environment, "actors": actors},
@@ -102,3 +102,99 @@ def test_compose_keys_each_service_by_its_normalized_name_and_references_the_res
     assert svc["container_name"] == "proj-the-archivist"
     assert svc["ports"] == ["8080"]
     assert "build" not in svc
+
+
+# ── deploy()/undeploy() dispatch on environment.type ────────────────────────────────────────
+
+def _actor_folder(tmp_path, name, recipe=None):
+    """A sibling folder of `tmp_path`'s own product.yaml, named exactly `name` — the default
+    local convention (`actor_source.py`) finds it with zero settings."""
+    folder = tmp_path / name
+    folder.mkdir()
+    if recipe:
+        (folder / "deploy" / "k8s" / "overlays" / recipe).mkdir(parents=True)
+    return folder
+
+
+def test_deploy_local_delegates_to_up(tmp_path, monkeypatch):
+    path = write_product(tmp_path, [{"name": "customer", "label": "alpha", "version": "latest"}])
+    calls = []
+    monkeypatch.setattr(deploy, "up", lambda p, r: calls.append((p, r)) or "the-project")
+
+    result = deploy.deploy(path, "registry")
+    assert result == ("local", "the-project")
+    assert calls == [(path, "registry")]
+
+
+def test_undeploy_local_delegates_to_down(tmp_path, monkeypatch):
+    path = write_product(tmp_path, [{"name": "customer", "label": "alpha", "version": "latest"}])
+    calls = []
+    monkeypatch.setattr(deploy, "down", lambda p: calls.append(p))
+
+    deploy.undeploy(path)
+    assert calls == [path]
+
+
+def test_deploy_k8s_with_no_matching_actor_folder_raises(tmp_path):
+    row = {"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"}
+    path = write_product(tmp_path, [row],
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
+    registry = FakeRegistry({"customer": ["0.1.0-alpha-abc0000"]})
+    with pytest.raises(ValueError):
+        deploy.deploy(path, registry)  # no sibling 'customer' folder, no settings given
+
+
+def test_deploy_k8s_with_a_missing_overlay_raises_before_applying_any_actor(tmp_path, monkeypatch):
+    _actor_folder(tmp_path, "customer")  # no deploy/k8s/overlays/develop
+    _actor_folder(tmp_path, "waiter", recipe="develop")
+    rows = [
+        {"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"},
+        {"name": "waiter", "label": "alpha", "version": "latest", "recipe": "develop"},
+    ]
+    path = write_product(tmp_path, rows,
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
+    registry = FakeRegistry({
+        "customer": ["0.1.0-alpha-abc0000"],
+        "waiter": ["0.1.0-alpha-def0000"],
+    })
+    applied = []
+    monkeypatch.setattr(k8s, "apply", lambda *a, **kw: applied.append(a))
+
+    with pytest.raises(ValueError):
+        deploy.deploy(path, registry)
+    assert applied == []
+
+
+def test_deploy_k8s_happy_path_applies_each_actor(tmp_path, monkeypatch):
+    customer = _actor_folder(tmp_path, "customer", recipe="develop")
+    waiter = _actor_folder(tmp_path, "waiter", recipe="develop")
+    rows = [
+        {"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"},
+        {"name": "waiter", "label": "alpha", "version": "latest", "recipe": "develop"},
+    ]
+    path = write_product(tmp_path, rows,
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
+    registry = FakeRegistry({
+        "customer": ["0.1.0-alpha-abc0000"],
+        "waiter": ["0.1.0-alpha-def0000"],
+    })
+    applied = []
+    monkeypatch.setattr(k8s, "apply", lambda *a, **kw: applied.append(a))
+
+    result = deploy.deploy(path, registry)
+    assert result == ("k8s", "ns")
+    assert applied == [
+        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo"),
+        ("ctx", "ns", waiter / "deploy", "develop", "waiter", "0.1.0-alpha-def0000", "demo"),
+    ]
+
+
+def test_undeploy_k8s_delegates_to_k8s_delete(tmp_path, monkeypatch):
+    row = {"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"}
+    path = write_product(tmp_path, [row],
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
+    calls = []
+    monkeypatch.setattr(k8s, "delete", lambda *a: calls.append(a))
+
+    deploy.undeploy(path)
+    assert calls == [("ctx", "ns", "demo")]

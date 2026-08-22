@@ -1,0 +1,25 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+# PyPI Trusted Publishing (OIDC) — no token is stored anywhere. The one-time setup is a
+# publisher on pypi.org naming this repo and this workflow. See README's "Releasing" section.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: build
+        # No sibling checkout needed: `uv build` packages this project's own source without
+        # resolving papeete-product (the [tool.uv.sources] path override is a local-dev-only
+        # resolution aid — the built wheel's metadata already names the real PyPI constraint).
+        run: uv build
+      - name: publish to PyPI
+        run: uv publish --trusted-publishing always

@@ -1,12 +1,12 @@
 """End-to-end: two real actors, spawned via Docker, verified reachable and discoverable.
 
-RUNS REAL CONTAINERS via `deploy.up()` against `examples/product.yaml` — the customer and waiter
-actors this repo ships as its own worked example (copied from `papeete-product`'s, so this repo's
-tests are self-contained rather than reaching across repos for fixtures).
+RUNS REAL CONTAINERS via `deploy.up()` against `examples/productDocker.yaml` — the customer and
+waiter actors this repo ships as its own worked example (copied from `papeete-product`'s, so this
+repo's tests are self-contained rather than reaching across repos for fixtures).
 
 BUILDING IS NOT THIS PACKAGE'S JOB — that's `papeete-actor build`'s. The `built` fixture below
 shells out to plain `docker build` directly, tagging each image in the real
-`{semver}-{label}-{shortSha}` shape `examples/product.yaml` declares (`label: alpha, version:
+`{semver}-{label}-{shortSha}` shape `examples/productDocker.yaml` declares (`label: alpha, version:
 latest`), so `deploy.resolve_one()` has something real to resolve `"latest"` against — standing
 in for `papeete-actor build`, exactly the way `papeete-product`'s own (now-deleted)
 `test_e2e_product.py` stood in for it before this suite replaced it.
@@ -28,7 +28,7 @@ from papeete_deploy.registry import LocalDockerRegistry
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 CUSTOMER = EXAMPLES / "customer"
 WAITER = EXAMPLES / "waiter"
-PRODUCT = EXAMPLES / "product.yaml"
+PRODUCT = EXAMPLES / "productDocker.yaml"
 
 CUSTOMER_TAG = "customer:0.1.0-alpha-e2e0001"
 WAITER_TAG = "waiter:0.1.0-alpha-e2e0001"

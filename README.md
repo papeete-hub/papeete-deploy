@@ -8,14 +8,19 @@ daemon) in ways a product's own identity contract deliberately refuses — see
 own `ADR-PP-0002`.
 
 ```
-papeete-deploy resolve   PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME]
-papeete-deploy run       PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME]
-papeete-deploy stop      PRODUCT.YAML
+papeete-deploy resolve    PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME]
+papeete-deploy deploy     PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME]
+                          [--actor-source {local,git}] [--actor-root PATH]
+                          [--actor-git-url URL] [--actor-git-ref REF]
+papeete-deploy undeploy   PRODUCT.YAML
 ```
 
-`resolve` prints each actor's resolved tag, no Docker involved — the smaller claim, useful in CI
-or for a human to check where a product would land before spending the time to run it. `run`
-resolves the same way, then starts every actor via Docker Compose.
+`resolve` prints each actor's resolved tag, no Docker/kubectl involved — the smaller claim, useful
+in CI or for a human to check where a product would land before spending the time to deploy it.
+`deploy` resolves the same way, then makes the product real wherever its declared
+`environment.type` says: `local` starts every actor via Docker Compose; `k8s` applies each actor's
+own kustomize overlay to a real cluster (see "Deploying to k8s" below). `undeploy` tears down
+whatever `deploy` started.
 
 ```bash
 pip install papeete-deploy
@@ -55,39 +60,166 @@ Which registry an actor's declared `environment` (required on every `product.yam
 is **not yet automatic** — `--registry`/`--acr-name` are explicit CLI flags for now. See
 `ADR-PD-0001`.
 
-## Discovery is Docker's, not invented here
+## Discovery is Docker's — or Kubernetes' — not invented here
 
-`papeete-deploy run` starts every actor on one shared Docker Compose project, each container named
-after its `name` (normalized). Compose's own embedded network DNS resolves that name for every
-other actor on the same project — no registry lookup, no sidecar, nothing new built for it. Every
-actor's server is expected to listen on a fixed port, `8080`, published to a host-assigned
-ephemeral port so a caller outside Docker can reach it too.
+`papeete-deploy deploy` against `environment.type: local` starts every actor on one shared Docker
+Compose project, each container named after its `name` (normalized). Compose's own embedded
+network DNS resolves that name for every other actor on the same project — no registry lookup, no
+sidecar, nothing new built for it. Every actor's server is expected to listen on a fixed port,
+`8080`, published to a host-assigned ephemeral port so a caller outside Docker can reach it too.
+
+Against `environment.type: k8s`, each actor's own Kubernetes Service (part of its
+`deploy/k8s/base/`, below) gives the same by-name discovery via cluster DNS instead — again,
+nothing this package invents.
+
+## Deploying to k8s
+
+An actor's folder MAY carry `deploy/k8s/base/` + `deploy/k8s/overlays/<recipe>/` — a plain,
+actor-authored kustomize layout (`papeete-actor`'s
+[`ADR-PA-0025`](https://github.com/papeete-hub/papeete-actor)). **The base Deployment's container
+image must be named exactly the actor's own normalized name, with no tag** — the hook this package
+uses to inject the resolved image and version at deploy time, without ever editing the actor's own
+files (`k8s.py`'s wrapper kustomization, same never-mutate-the-source discipline `deploy.py`'s
+`_compose_file()` uses for Compose).
+
+```bash
+papeete-deploy deploy PRODUCT.YAML
+```
+
+`recipe` (declared per actor in `product.yaml`, `papeete-product`'s own
+[`ADR-PP-0003`](https://github.com/papeete-hub/papeete-product)) says which overlay; `environment.
+k8sName` (the kubectl context) and `environment.name` (the namespace, created if missing, **never
+deleted**) say where. Every actor's deploy folder and overlay is validated to exist *before* any
+of them is applied — a missing overlay fails loudly with nothing partially deployed, never a
+silent partial rollout.
+
+**Only verified against Docker Desktop's Kubernetes**, whose node shares the host's local image
+store — a cluster with its own separate image store would need those images pushed somewhere
+reachable first, which this package does not do.
+
+### Locating each actor's deploy folder
+
+Each actor's deploy folder is *located*, never passed on the command line — three tiers, most to
+least specific (`ADR-PD-0003`):
+
+1. **A per-actor override** — only in a `papeete-deploy.yaml` next to `product.yaml`:
+   ```yaml
+   actorDeployOverrides:
+     - actor: customer
+       type: local
+       path: ../wherever/customer          # the actor's own folder, directly
+     - actor: waiter
+       type: git
+       url: https://example.com/waiter-deploy.git
+       ref: main
+       subpath: waiter                      # optional; defaults to the actor's own name
+   ```
+2. **A global source** — `papeete-deploy.yaml`'s `actorDeploySource`, layered under env vars
+   (`PAPEETE_DEPLOY_ACTOR_SOURCE`/`_ROOT`/`_GIT_URL`/`_GIT_REF`), layered under
+   `--actor-source`/`--actor-root`/`--actor-git-url`/`--actor-git-ref` (CLI wins):
+   ```yaml
+   actorDeploySource:
+     type: git                              # or: local, with an optional `root`
+     url: https://example.com/deploy-repo.git
+     ref: main                              # optional
+   ```
+   For `type: git`, each actor's deploy folder is expected at `<url>/<actor-name>/deploy` — one
+   shared repo, cloned once (`git clone --depth 1`) and reused for every actor that shares it.
+3. **The zero-config default** — a sibling folder of `product.yaml`, named exactly the actor's
+   own declared `name`, containing `deploy/k8s/overlays/<recipe>` — exactly this repo's own
+   `examples/` layout, which is why the worked example below needs no flags at all.
 
 ## The worked example
 
 [`examples/`](./examples/) is a complete, runnable product: a `customer` actor and a `waiter`
 actor (copied from `papeete-product`'s own worked example, so this repo's tests are
-self-contained), plus a `product.yaml` declaring `label: alpha, version: latest` for both.
+self-contained, each also carrying a `deploy/k8s/` folder), plus two `product.yaml` variants —
+same actors, different `environment` — declaring `label: alpha, version: latest` for both:
+[`productDocker.yaml`](./examples/productDocker.yaml) (`environment.type: local`) and
+[`productK8s.yaml`](./examples/productK8s.yaml) (`environment.type: k8s`, targeting the
+`docker-desktop` context, `recipe: develop` per actor).
 
 ```bash
 # stand-in for `papeete-actor build`, tagging in the real {semver}-{label}-{shortSha} shape:
 docker build -t customer:0.1.0-alpha-e2e0001 examples/customer
 docker build -t waiter:0.1.0-alpha-e2e0001 examples/waiter
 
-papeete-deploy resolve examples/product.yaml
-papeete-deploy run examples/product.yaml
-curl http://localhost:PORT/order        # PORT printed by run
-papeete-deploy stop examples/product.yaml
+# local, via Docker Compose:
+papeete-deploy resolve examples/productDocker.yaml
+papeete-deploy deploy examples/productDocker.yaml
+curl http://localhost:PORT/order        # PORT printed by deploy
+papeete-deploy undeploy examples/productDocker.yaml
+
+# local k8s (Docker Desktop's Kubernetes), via kustomize — no flags: examples/'s own layout
+# (product.yaml next to customer/ and waiter/) already matches the default convention:
+papeete-deploy deploy examples/productK8s.yaml
+kubectl -n papeete-deploy-example get deploy,svc -l papeete-deploy/product=table-service
+papeete-deploy undeploy examples/productK8s.yaml
 ```
 
-`tests/test_e2e_deploy.py` spawns this same example for real via Docker and asserts both actors
-are reachable from outside Docker and that the customer discovers the waiter by name from inside
-it:
+`tests/test_e2e_deploy.py` spawns `productDocker.yaml` for real via Docker Compose and asserts
+both actors are reachable from outside Docker and that the customer discovers the waiter by name
+from inside it. `tests/test_e2e_k8s.py` does the same against a real k8s cluster (`kubectl config
+current-context`, its own throwaway product/namespace rather than `productK8s.yaml`, so repeated
+test runs never collide) — deploys via `deploy.deploy(..., actor_source=...)` pointed at this
+repo's own `examples/`, waits for both pods Ready, execs into the customer pod to prove it reaches
+the waiter by Service name, then undeploys and confirms the namespace survives:
 
 ```bash
-uv run --extra dev pytest -m e2e          # needs a Docker daemon
+uv run --extra dev pytest -m e2e          # needs a Docker daemon; k8s cases also need a context
 uv run --extra dev pytest -m "not e2e"    # the fast, offline structural suite
 ```
+
+## Releasing
+
+Tag-triggered, via [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC).
+**No API token is stored anywhere** — GitHub mints a short-lived OIDC token per run and PyPI trades
+it for an upload token. There is nothing to rotate and nothing to leak.
+
+```bash
+git tag v0.1.1 && git push origin v0.1.1     # .github/workflows/release.yml does the rest
+```
+
+### One-time setup — **not done yet**
+
+`papeete-deploy` is already claimed on PyPI (uploaded manually, outside this repo's CI), so this
+is the *existing-project* flow, not the pending-publisher one `papeete-actor`'s README documents
+for a project that doesn't exist yet — someone with owner/maintainer rights on the PyPI project
+has to do this from its own settings page, which nothing here can do on your behalf:
+
+**1. A publisher on PyPI's existing-project settings.** At
+`https://pypi.org/manage/project/papeete-deploy/settings/publishing/`, add a **GitHub** publisher:
+
+| Field | Value |
+|---|---|
+| Owner | `papeete-hub` |
+| Repository name | `papeete-deploy` |
+| Workflow name | `release.yml` |
+| Environment name | `pypi` |
+
+All four must match exactly — PyPI checks the OIDC claims against them and rejects the upload
+otherwise. `release.yml` already declares `permissions: id-token: write` and `environment: pypi`,
+which is what makes those claims present.
+
+**2. The `pypi` GitHub environment.** No secrets needed in it — it exists so the OIDC claim
+carries an environment name for PyPI to match. Protection rules are worth considering, since a
+release is irreversible: PyPI never allows re-uploading a version, even after a delete. Required
+reviewers, and restricting deployments to tags matching `v*`, are the two that earn their keep.
+
+Until step 1 is done, `release.yml` will run but its `publish to PyPI` step will fail (no trusted
+publisher recognizes this workflow's OIDC token yet).
+
+### What a release does — and doesn't — verify
+
+The workflow builds and publishes; it does **not** install the built wheel into a clean
+environment first (the pattern `papeete-actor`'s release workflow uses to prove its contract
+survived packaging). `papeete-deploy` has no analogous `contracts` command, and — more
+importantly — a clean-env install would currently fail anyway: `papeete-product`, a real
+dependency, has no PyPI release of its own yet (`ci.yml`'s own comment works around that with a
+sibling checkout + `[tool.uv.sources]` path override — a local-dev-only resolution aid that
+doesn't apply to `pip install papeete-deploy` from PyPI). Anyone installing `papeete-deploy` from
+PyPI today hits that same gap. Closing it means `papeete-product` needs its own PyPI release
+first — tracked as an open item, not solved here.
 
 ## Licence
 
