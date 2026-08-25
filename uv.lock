@@ -55,7 +55,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "papeete-product"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "../papeete-product" }
 dependencies = [
     { name = "pyyaml" },

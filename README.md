@@ -158,10 +158,18 @@ environment:
 `<normalized-product-name>-` prefix**, so two products sharing a namespace/cluster never collide
 on bare object names (the k8s analogue of Compose's own `<project>-<name>` container naming).
 Kustomize's built-in reference-fixup keeps in-overlay references (an Ingress's backend Service
-name, say) correct automatically. This prefix only ever touches k8s object names it can see — a
+name, say) correct automatically. This prefix only ever touches k8s object *names* it can see — a
 literal string value inside a ConfigMap or an env var (an external resource name, like a RabbitMQ
 queue) is untouched; making those product-specific, if needed, is the deploy-folder author's own
 job.
+
+**Every Ingress path is also prefixed, generated the same way (`ADR-PD-0005`)**: with
+`/<normalized-product-name>/<environment.name>/` — the URL-path analogue of the object-name prefix
+above, closing the one gap `namePrefix` itself structurally can't reach (a path is a string value,
+not an object name/reference). An actor's own `ingress.yaml` authors only its bare, actor-local
+path (e.g. `/customer/api(/|$)(.*)`) and must start with a leading `/`; the product+namespace
+segments are injected at apply time, never hand-typed. Any other literal string value (a ConfigMap
+entry, an env var) remains the deploy-folder author's own responsibility, as above.
 
 ## The worked example
 

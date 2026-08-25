@@ -11,7 +11,7 @@ spec:
   rules:
     - http:
         paths:
-          - path: /table-service/develop/waiter/api(/|$)(.*)
+          - path: /waiter/api(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:

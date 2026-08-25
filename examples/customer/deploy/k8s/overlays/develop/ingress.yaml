@@ -11,7 +11,7 @@ spec:
   rules:
     - http:
         paths:
-          - path: /table-service/develop/customer/api(/|$)(.*)
+          - path: /customer/api(/|$)(.*)
             pathType: ImplementationSpecific
             backend:
               service:

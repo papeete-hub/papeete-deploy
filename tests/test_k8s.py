@@ -16,7 +16,7 @@ def test_wrapper_kustomization_sets_resources_images_and_labels(tmp_path):
     overlay_dir.mkdir()
 
     wrapper_dir = k8s._wrapper_kustomization(overlay_dir, "customer", "0.1.0-alpha-abc0000",
-                                             "table-service")
+                                             "table-service", "develop-ns")
     kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
 
     # a relative path from the wrapper dir to the overlay — never an absolute one, which
@@ -36,7 +36,8 @@ def test_wrapper_kustomization_omits_images_when_no_image_given(tmp_path):
     overlay_dir = tmp_path / "overlay"
     overlay_dir.mkdir()
 
-    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "table-service")
+    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "table-service",
+                                              "develop-ns")
     kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
 
     assert "images" not in kustomization
@@ -51,11 +52,42 @@ def test_wrapper_kustomization_normalizes_the_prefix_but_not_the_label(tmp_path)
     overlay_dir = tmp_path / "overlay"
     overlay_dir.mkdir()
 
-    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "Table Service")
+    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "Table Service",
+                                              "develop-ns")
     kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
 
     assert kustomization["namePrefix"] == "table-service-"
     assert kustomization["commonLabels"][k8s.PRODUCT_LABEL] == "Table Service"
+
+
+# ── ADR-PD-0005: generated Ingress path prefix ──────────────────────────────────────────────────
+
+def test_wrapper_kustomization_injects_an_ingress_prefix_configmap_and_replacement(tmp_path):
+    overlay_dir = tmp_path / "overlay"
+    overlay_dir.mkdir()
+
+    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "Table Service",
+                                              "develop-ns")
+    kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
+
+    [configmap] = kustomization["configMapGenerator"]
+    assert configmap["name"] == k8s.INGRESS_PREFIX_CONFIGMAP_NAME
+    # the product segment is normalized (matches namePrefix), the namespace segment is used as-is
+    # (already k8s-namespace-safe, hence URL-segment-safe).
+    assert configmap["literals"] == ["PATH_PREFIX=/table-service/develop-ns"]
+
+    [replacement] = kustomization["replacements"]
+    assert replacement["source"] == {
+        "kind": "ConfigMap",
+        "name": k8s.INGRESS_PREFIX_CONFIGMAP_NAME,
+        "fieldPath": "data.PATH_PREFIX",
+    }
+    [target] = replacement["targets"]
+    assert target["select"] == {"kind": "Ingress"}
+    assert target["fieldPaths"] == ["spec.rules.*.http.paths.*.path"]
+    # index: 0 on a "/"-delimited, leading-slash path replaces the empty pre-leading-slash
+    # element — a clean prefix, not a whole-field clobber (verified live, ADR-PD-0005).
+    assert target["options"] == {"delimiter": "/", "index": 0}
 
 
 # ── _overlay_dir ──────────────────────────────────────────────────────────────────────────────

@@ -176,6 +176,20 @@ def test_k8s_object_names_and_references_carry_the_product_prefix(deployed_produ
     assert backend == "table-service-customer"
 
 
+def test_ingress_path_carries_the_generated_product_and_namespace_prefix(deployed_product):
+    """ADR-PD-0005: `examples/customer`'s `ingress.yaml` authors only its bare, actor-local path
+    (`/customer/api(/|$)(.*)`) — the `/table-service/<namespace>/` prefix is injected by
+    `_wrapper_kustomization()`'s generated `replacements` block, not hand-typed."""
+    _env_type, namespace = deployed_product
+    path = subprocess.run(
+        ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "ingress",
+         "table-service-customer", "-o",
+         "jsonpath={.spec.rules[0].http.paths[0].path}"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert path == f"/table-service/{namespace}/customer/api(/|$)(.*)"
+
+
 def _resource_count(namespace: str, product_name: str) -> int:
     out = subprocess.run(
         ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "all",
