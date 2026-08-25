@@ -4,6 +4,7 @@ environment:
   type: k8s
   name: papeete-deploy-example
   k8sName: docker-desktop
+  recipe: develop
 actors:
   - name: customer
     label: alpha

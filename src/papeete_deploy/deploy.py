@@ -169,6 +169,15 @@ def port(project: str, name: str, container_port: int = PORT) -> int:
 
 # ── deploy/undeploy: dispatch on environment.type ────────────────────────────────────────────
 
+def _product_deploy_folder(product_path: Path) -> Path:
+    """The product-level deploy folder — a sibling `deploy` directory next to `product.yaml`
+    itself, directly analogous to `actor_source.py`'s own zero-config convention but for the
+    product as a whole. Zero-config only, no override tiers (unlike `actor_source.py`'s three) —
+    this pass's deliberately narrow scope; a follow-up ADR can layer overrides later if real
+    friction shows up, same as `ADR-PD-0003` did for actors."""
+    return product_path.parent / "deploy"
+
+
 def deploy(product_path: Path | str, registry: Registry,
            actor_source: actor_source_mod.Settings | None = None) -> tuple[str, str]:
     """Resolve every actor a product names, then make it real wherever `environment` says.
@@ -187,13 +196,22 @@ def deploy(product_path: Path | str, registry: Registry,
         resolved = {a["name"]: a["version"] for a in resolve_versions(product_path, registry)}
         clones: dict = {}
 
-        # validate every actor's deploy folder + overlay exists BEFORE applying any of them
+        # validate the product-level overlay (if opted into via environment.recipe) and every
+        # actor's deploy folder + overlay exist BEFORE applying any of them
+        product_recipe = env.get("recipe")
+        product_deploy_folder = _product_deploy_folder(product_path)
+        if product_recipe is not None:
+            k8s._overlay_dir(product_deploy_folder, product_recipe)
+
         plan = []
         for actor in pp.resolve(product_path):
             deploy_folder = actor_source_mod.resolve_actor_folder(actor["name"], settings, clones)
             overlay = k8s._overlay_dir(deploy_folder, actor["recipe"])
             plan.append((actor["name"], deploy_folder, actor["recipe"], overlay))
 
+        if product_recipe is not None:
+            k8s.apply_product(env["k8sName"], env["name"], product_deploy_folder, product_recipe,
+                               product["product"])
         for name, deploy_folder, recipe, _overlay in plan:
             k8s.apply(env["k8sName"], env["name"], deploy_folder, recipe, normalize(name),
                       resolved[name], product["product"])

@@ -1,19 +1,24 @@
 """The customer's identity endpoint at GET /, and GET /order — proof of cross-actor discovery.
 
-`/order` calls the waiter BY NAME — `http://waiter:8080/`, the actor's manifest `name` as a DNS
-hostname on the product's own Docker network — never an IP, never a registry lookup. That name
-resolution is Docker Compose's embedded network DNS, the same mechanism every service on one
+`/order` calls the waiter BY NAME — `http://waiter:8080/` by default, the actor's manifest `name`
+as a DNS hostname on the product's own Docker network — never an IP, never a registry lookup. That
+name resolution is Docker Compose's embedded network DNS, the same mechanism every service on one
 Compose project already gets for free; nothing here builds discovery, it only relies on it.
+
+Under k8s, resource names are product-scoped (`ADR-PD-0004`'s `namePrefix`), so the waiter's own
+Service is no longer reachable at the bare name — `WAITER_URL` is overridable via the environment
+for that path; the actor's own k8s Deployment (`deploy/k8s/base/deployment.yaml`) sets it.
 """
 import http.server
 import json
+import os
 import urllib.request
 from pathlib import Path
 
 import yaml
 
 MANIFEST = yaml.safe_load(Path(__file__).with_name("actor.yaml").read_text())
-WAITER_URL = "http://waiter:8080/"
+WAITER_URL = os.environ.get("WAITER_URL", "http://waiter:8080/")
 
 
 class Handler(http.server.BaseHTTPRequestHandler):

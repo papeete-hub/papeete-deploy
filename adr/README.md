@@ -10,6 +10,7 @@ against a real registry, deploying the result, and this package's own boundary.
 | [ADR-PD-0001](./ADR-PD-0001-papeete-deploy-is-a-standalone-package.md) | papeete-deploy is a standalone package, resolving product queries against a registry | Accepted |
 | [ADR-PD-0002](./ADR-PD-0002-k8s-deployment-reads-the-actors-own-overlay.md) | k8s deployment reads the actor's own kustomize overlay; deploy/undeploy replace run/stop | Accepted |
 | [ADR-PD-0003](./ADR-PD-0003-actor-deploy-folder-resolution-replaces-the-folders-argument.md) | Actor deploy-folder resolution (local convention, git source, per-actor overrides) replaces the folders CLI argument | Accepted |
+| [ADR-PD-0004](./ADR-PD-0004-product-level-deploy-folder-and-name-prefix.md) | Product-level k8s deploy folder, and a product-scoped namePrefix for every k8s wrapper | Accepted |
 
 ## Authoring
 

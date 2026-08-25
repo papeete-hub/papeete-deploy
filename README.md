@@ -70,7 +70,10 @@ sidecar, nothing new built for it. Every actor's server is expected to listen on
 
 Against `environment.type: k8s`, each actor's own Kubernetes Service (part of its
 `deploy/k8s/base/`, below) gives the same by-name discovery via cluster DNS instead — again,
-nothing this package invents.
+nothing this package invents. Every k8s object this package applies is renamed with a
+product-scoped prefix (below), so an actor calling a sibling by name needs the *prefixed* name —
+`examples/customer`'s own `deploy/k8s/base/deployment.yaml` shows the pattern (a plain env var,
+authored by the deploy-folder author, same as any other Deployment env var).
 
 ## Deploying to k8s
 
@@ -128,6 +131,37 @@ least specific (`ADR-PD-0003`):
 3. **The zero-config default** — a sibling folder of `product.yaml`, named exactly the actor's
    own declared `name`, containing `deploy/k8s/overlays/<recipe>` — exactly this repo's own
    `examples/` layout, which is why the worked example below needs no flags at all.
+
+### Product-level resources
+
+An actor's own overlay is the only thing `deploy()` applied until now — there was no way to
+express a resource that belongs to the *product* as a whole (a shared dashboard covering every
+actor, say), without bolting it onto one actor's lifecycle or duplicating it into every actor's
+overlay (`ADR-PD-0004`).
+
+A **product** MAY carry its own `deploy/k8s/base/` + `deploy/k8s/overlays/<recipe>/` too — a
+sibling `deploy/` folder next to `product.yaml` itself, same kustomize shape as an actor's,
+zero-config only (no override tiers). It's entirely opt-in: set `environment.recipe` to say which
+overlay to use; leave it out and nothing product-level is applied. When set, the folder+overlay is
+validated to exist in the same pre-flight pass as every actor's own overlay — before anything is
+applied, exactly like a missing actor overlay.
+
+```yaml
+environment:
+  type: k8s
+  name: papeete-deploy-example
+  k8sName: docker-desktop
+  recipe: develop   # selects examples/deploy/k8s/overlays/develop
+```
+
+**Every k8s object this package applies — an actor's or the product's — is renamed with a
+`<normalized-product-name>-` prefix**, so two products sharing a namespace/cluster never collide
+on bare object names (the k8s analogue of Compose's own `<project>-<name>` container naming).
+Kustomize's built-in reference-fixup keeps in-overlay references (an Ingress's backend Service
+name, say) correct automatically. This prefix only ever touches k8s object names it can see — a
+literal string value inside a ConfigMap or an env var (an external resource name, like a RabbitMQ
+queue) is untouched; making those product-specific, if needed, is the deploy-folder author's own
+job.
 
 ## The worked example
 

@@ -179,7 +179,9 @@ def test_deploy_k8s_happy_path_applies_each_actor(tmp_path, monkeypatch):
         "waiter": ["0.1.0-alpha-def0000"],
     })
     applied = []
+    applied_product = []
     monkeypatch.setattr(k8s, "apply", lambda *a, **kw: applied.append(a))
+    monkeypatch.setattr(k8s, "apply_product", lambda *a, **kw: applied_product.append(a))
 
     result = deploy.deploy(path, registry)
     assert result == ("k8s", "ns")
@@ -187,6 +189,49 @@ def test_deploy_k8s_happy_path_applies_each_actor(tmp_path, monkeypatch):
         ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo"),
         ("ctx", "ns", waiter / "deploy", "develop", "waiter", "0.1.0-alpha-def0000", "demo"),
     ]
+    # no environment.recipe declared — no product-level deploy folder is even looked for
+    assert applied_product == []
+
+
+def test_deploy_k8s_with_environment_recipe_also_applies_product_level_resources(tmp_path,
+                                                                                   monkeypatch):
+    customer = _actor_folder(tmp_path, "customer", recipe="develop")
+    (tmp_path / "deploy" / "k8s" / "overlays" / "develop").mkdir(parents=True)
+    rows = [{"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"}]
+    path = write_product(tmp_path, rows,
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx",
+                                       "recipe": "develop"})
+    registry = FakeRegistry({"customer": ["0.1.0-alpha-abc0000"]})
+    applied = []
+    applied_product = []
+    monkeypatch.setattr(k8s, "apply", lambda *a, **kw: applied.append(a))
+    monkeypatch.setattr(k8s, "apply_product", lambda *a, **kw: applied_product.append(a))
+
+    result = deploy.deploy(path, registry)
+    assert result == ("k8s", "ns")
+    assert applied_product == [("ctx", "ns", tmp_path / "deploy", "develop", "demo")]
+    assert applied == [
+        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo"),
+    ]
+
+
+def test_deploy_k8s_with_environment_recipe_but_missing_product_overlay_raises_before_applying(
+        tmp_path, monkeypatch):
+    _actor_folder(tmp_path, "customer", recipe="develop")  # a valid actor folder — irrelevant
+    rows = [{"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"}]
+    path = write_product(tmp_path, rows,
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx",
+                                       "recipe": "develop"})
+    registry = FakeRegistry({"customer": ["0.1.0-alpha-abc0000"]})
+    applied = []
+    applied_product = []
+    monkeypatch.setattr(k8s, "apply", lambda *a, **kw: applied.append(a))
+    monkeypatch.setattr(k8s, "apply_product", lambda *a, **kw: applied_product.append(a))
+
+    with pytest.raises(ValueError):
+        deploy.deploy(path, registry)  # no tmp_path/deploy folder at all
+    assert applied == []
+    assert applied_product == []
 
 
 def test_undeploy_k8s_delegates_to_k8s_delete(tmp_path, monkeypatch):

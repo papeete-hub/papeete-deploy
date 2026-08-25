@@ -24,11 +24,38 @@ def test_wrapper_kustomization_sets_resources_images_and_labels(tmp_path):
     [resource] = kustomization["resources"]
     assert not os.path.isabs(resource)
     assert (wrapper_dir / resource).resolve() == overlay_dir.resolve()
+    assert kustomization["namePrefix"] == "table-service-"
     assert kustomization["images"] == [{"name": "customer", "newTag": "0.1.0-alpha-abc0000"}]
     assert kustomization["commonLabels"] == {
         k8s.MANAGED_BY_LABEL: "papeete-deploy",
         k8s.PRODUCT_LABEL: "table-service",
     }
+
+
+def test_wrapper_kustomization_omits_images_when_no_image_given(tmp_path):
+    overlay_dir = tmp_path / "overlay"
+    overlay_dir.mkdir()
+
+    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "table-service")
+    kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
+
+    assert "images" not in kustomization
+    assert kustomization["namePrefix"] == "table-service-"
+    assert kustomization["commonLabels"] == {
+        k8s.MANAGED_BY_LABEL: "papeete-deploy",
+        k8s.PRODUCT_LABEL: "table-service",
+    }
+
+
+def test_wrapper_kustomization_normalizes_the_prefix_but_not_the_label(tmp_path):
+    overlay_dir = tmp_path / "overlay"
+    overlay_dir.mkdir()
+
+    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, None, None, "Table Service")
+    kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
+
+    assert kustomization["namePrefix"] == "table-service-"
+    assert kustomization["commonLabels"][k8s.PRODUCT_LABEL] == "Table Service"
 
 
 # ── _overlay_dir ──────────────────────────────────────────────────────────────────────────────

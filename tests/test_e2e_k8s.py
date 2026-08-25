@@ -62,11 +62,29 @@ def built():
 
 @pytest.fixture(scope="module")
 def product_path(tmp_path_factory):
-    path = tmp_path_factory.mktemp("e2ek8s") / "product.yaml"
+    root = tmp_path_factory.mktemp("e2ek8s")
+    # a product-level deploy folder, sibling to product.yaml, exercising ADR-PD-0004's
+    # zero-config product convention — same shape as examples/deploy/k8s/.
+    (root / "deploy" / "k8s" / "overlays" / "develop").mkdir(parents=True)
+    (root / "deploy" / "k8s" / "overlays" / "develop" / "kustomization.yaml").write_text(
+        yaml.safe_dump({
+            "apiVersion": "kustomize.config.k8s.io/v1beta1",
+            "kind": "Kustomization",
+            "resources": ["dashboard-configmap.yaml"],
+        }))
+    (root / "deploy" / "k8s" / "overlays" / "develop" / "dashboard-configmap.yaml").write_text(
+        yaml.safe_dump({
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "dashboard"},
+            "data": {"dummy": "e2e"},
+        }))
+
+    path = root / "product.yaml"
     path.write_text(yaml.safe_dump({
-        "product": "table-service-e2ek8s",
+        "product": "table-service",
         "version": "0.1.0",
-        "environment": {"type": "k8s", "name": NAMESPACE, "k8sName": CONTEXT},
+        "environment": {"type": "k8s", "name": NAMESPACE, "k8sName": CONTEXT, "recipe": "develop"},
         "actors": [
             {"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"},
             {"name": "waiter", "label": "alpha", "version": "latest", "recipe": "develop"},
@@ -82,7 +100,7 @@ def deployed_product(built, product_path):
     try:
         subprocess.run(
             ["kubectl", "--context", CONTEXT, "-n", namespace, "wait", "--for=condition=Ready",
-             "pod", "-l", "papeete-deploy/product=table-service-e2ek8s", "--timeout=60s"],
+             "pod", "-l", "papeete-deploy/product=table-service", "--timeout=60s"],
             check=True,
         )
         yield env_type, namespace
@@ -119,16 +137,43 @@ def test_both_actors_become_ready(deployed_product):
 
 
 def test_the_customer_discovers_the_waiter_by_name(deployed_product):
-    """DISCOVERABLE: the customer pod, from inside the cluster, reaches the waiter Service as
-    `http://waiter:8080/` — a DNS hostname it was never given an IP for."""
+    """DISCOVERABLE: the customer pod, from inside the cluster, reaches the waiter Service by its
+    product-scoped name (`WAITER_URL`, set on the actor's own k8s Deployment per ADR-PD-0004) — a
+    DNS hostname it was never given an IP for."""
     _env_type, namespace = deployed_product
     out = _kubectl_exec(namespace, "app=customer", "python", "-c",
                          "import urllib.request; print(urllib.request.urlopen("
                          "'http://localhost:8080/order', timeout=5).read().decode())")
     body = json.loads(out)
-    assert body["reached"] == "http://waiter:8080/"
+    assert body["reached"] == "http://table-service-waiter:8080/"
     assert body["waiter_says"]["name"] == "waiter"
     assert body["customer"]["name"] == "customer"
+
+
+def test_k8s_object_names_and_references_carry_the_product_prefix(deployed_product):
+    """Every object this package applies is renamed `table-service-<...>` (ADR-PD-0004), and
+    kustomize's built-in nameReference transformer keeps in-overlay references — the customer's
+    own Ingress backend, here — pointing at the renamed Service, not the bare original name."""
+    _env_type, namespace = deployed_product
+    names = subprocess.run(
+        ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "deploy,svc,configmap",
+         "-l", "papeete-deploy/product=table-service", "-o",
+         "jsonpath={.items[*].metadata.name}"],
+        check=True, capture_output=True, text=True,
+    ).stdout.split()
+    assert "table-service-customer" in names
+    assert "table-service-waiter" in names
+    assert "table-service-dashboard" in names
+    assert "customer" not in names
+    assert "waiter" not in names
+
+    backend = subprocess.run(
+        ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "ingress",
+         "table-service-customer", "-o",
+         "jsonpath={.spec.rules[0].http.paths[0].backend.service.name}"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert backend == "table-service-customer"
 
 
 def _resource_count(namespace: str, product_name: str) -> int:
@@ -152,12 +197,12 @@ def test_undeploy_removes_resources_but_leaves_the_namespace(built, product_path
     _env_type, namespace = deploy.deploy(product_path, registry, actor_source=ACTOR_SOURCE)
     subprocess.run(
         ["kubectl", "--context", CONTEXT, "-n", namespace, "wait", "--for=condition=Ready",
-         "pod", "-l", "papeete-deploy/product=table-service-e2ek8s", "--timeout=60s"],
+         "pod", "-l", "papeete-deploy/product=table-service", "--timeout=60s"],
         check=True,
     )
-    assert _resource_count(namespace, "table-service-e2ek8s") > 0
+    assert _resource_count(namespace, "table-service") > 0
 
     deploy.undeploy(product_path)
 
-    assert _resource_count(namespace, "table-service-e2ek8s") == 0
+    assert _resource_count(namespace, "table-service") == 0
     assert _namespace_exists(namespace)
