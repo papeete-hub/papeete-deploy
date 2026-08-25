@@ -82,7 +82,7 @@ def product_path(tmp_path_factory):
 
     path = root / "product.yaml"
     path.write_text(yaml.safe_dump({
-        "product": "table-service",
+        "product": "pd-table-service",
         "version": "0.1.0",
         "environment": {"type": "k8s", "name": NAMESPACE, "k8sName": CONTEXT, "recipe": "develop"},
         "actors": [
@@ -100,7 +100,7 @@ def deployed_product(built, product_path):
     try:
         subprocess.run(
             ["kubectl", "--context", CONTEXT, "-n", namespace, "wait", "--for=condition=Ready",
-             "pod", "-l", "papeete-deploy/product=table-service", "--timeout=60s"],
+             "pod", "-l", "papeete-deploy/product=pd-table-service", "--timeout=60s"],
             check=True,
         )
         yield env_type, namespace
@@ -145,49 +145,49 @@ def test_the_customer_discovers_the_waiter_by_name(deployed_product):
                          "import urllib.request; print(urllib.request.urlopen("
                          "'http://localhost:8080/order', timeout=5).read().decode())")
     body = json.loads(out)
-    assert body["reached"] == "http://table-service-waiter:8080/"
+    assert body["reached"] == "http://pd-table-service-waiter:8080/"
     assert body["waiter_says"]["name"] == "waiter"
     assert body["customer"]["name"] == "customer"
 
 
 def test_k8s_object_names_and_references_carry_the_product_prefix(deployed_product):
-    """Every object this package applies is renamed `table-service-<...>` (ADR-PD-0004), and
+    """Every object this package applies is renamed `pd-table-service-<...>` (ADR-PD-0004), and
     kustomize's built-in nameReference transformer keeps in-overlay references — the customer's
     own Ingress backend, here — pointing at the renamed Service, not the bare original name."""
     _env_type, namespace = deployed_product
     names = subprocess.run(
         ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "deploy,svc,configmap",
-         "-l", "papeete-deploy/product=table-service", "-o",
+         "-l", "papeete-deploy/product=pd-table-service", "-o",
          "jsonpath={.items[*].metadata.name}"],
         check=True, capture_output=True, text=True,
     ).stdout.split()
-    assert "table-service-customer" in names
-    assert "table-service-waiter" in names
-    assert "table-service-dashboard" in names
+    assert "pd-table-service-customer" in names
+    assert "pd-table-service-waiter" in names
+    assert "pd-table-service-dashboard" in names
     assert "customer" not in names
     assert "waiter" not in names
 
     backend = subprocess.run(
         ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "ingress",
-         "table-service-customer", "-o",
+         "pd-table-service-customer", "-o",
          "jsonpath={.spec.rules[0].http.paths[0].backend.service.name}"],
         check=True, capture_output=True, text=True,
     ).stdout.strip()
-    assert backend == "table-service-customer"
+    assert backend == "pd-table-service-customer"
 
 
 def test_ingress_path_carries_the_generated_product_and_namespace_prefix(deployed_product):
     """ADR-PD-0005: `examples/customer`'s `ingress.yaml` authors only its bare, actor-local path
-    (`/customer/api(/|$)(.*)`) — the `/table-service/<namespace>/` prefix is injected by
+    (`/customer/api(/|$)(.*)`) — the `/pd-table-service/<namespace>/` prefix is injected by
     `_wrapper_kustomization()`'s generated `replacements` block, not hand-typed."""
     _env_type, namespace = deployed_product
     path = subprocess.run(
         ["kubectl", "--context", CONTEXT, "-n", namespace, "get", "ingress",
-         "table-service-customer", "-o",
+         "pd-table-service-customer", "-o",
          "jsonpath={.spec.rules[0].http.paths[0].path}"],
         check=True, capture_output=True, text=True,
     ).stdout.strip()
-    assert path == f"/table-service/{namespace}/customer/api(/|$)(.*)"
+    assert path == f"/pd-table-service/{namespace}/customer/api(/|$)(.*)"
 
 
 def _resource_count(namespace: str, product_name: str) -> int:
@@ -211,12 +211,12 @@ def test_undeploy_removes_resources_but_leaves_the_namespace(built, product_path
     _env_type, namespace = deploy.deploy(product_path, registry, actor_source=ACTOR_SOURCE)
     subprocess.run(
         ["kubectl", "--context", CONTEXT, "-n", namespace, "wait", "--for=condition=Ready",
-         "pod", "-l", "papeete-deploy/product=table-service", "--timeout=60s"],
+         "pod", "-l", "papeete-deploy/product=pd-table-service", "--timeout=60s"],
         check=True,
     )
-    assert _resource_count(namespace, "table-service") > 0
+    assert _resource_count(namespace, "pd-table-service") > 0
 
     deploy.undeploy(product_path)
 
-    assert _resource_count(namespace, "table-service") == 0
+    assert _resource_count(namespace, "pd-table-service") == 0
     assert _namespace_exists(namespace)

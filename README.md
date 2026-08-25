@@ -195,7 +195,7 @@ papeete-deploy undeploy examples/productDocker.yaml
 # local k8s (Docker Desktop's Kubernetes), via kustomize — no flags: examples/'s own layout
 # (product.yaml next to customer/ and waiter/) already matches the default convention:
 papeete-deploy deploy examples/productK8s.yaml
-kubectl -n papeete-deploy-example get deploy,svc -l papeete-deploy/product=table-service
+kubectl -n papeete-deploy-example get deploy,svc -l papeete-deploy/product=pd-table-service
 papeete-deploy undeploy examples/productK8s.yaml
 ```
 

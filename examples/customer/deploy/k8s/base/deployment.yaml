@@ -19,4 +19,4 @@ spec:
             - containerPort: 8080
           env:
             - name: WAITER_URL
-              value: http://table-service-waiter:8080/
+              value: http://pd-table-service-waiter:8080/

@@ -5,9 +5,9 @@ metadata:
   labels:
     grafana_dashboard: "1"
 data:
-  table-service.json: |
+  pd-table-service.json: |
     {
-      "title": "table-service — customer/waiter drill-down",
+      "title": "pd-table-service — customer/waiter drill-down",
       "templating": {
         "list": [
           {
