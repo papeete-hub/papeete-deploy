@@ -60,6 +60,20 @@ def built():
         subprocess.run(["docker", "build", "-t", tag, str(folder)], check=True)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _delete_test_namespace_after_module():
+    """`deploy.undeploy()` deliberately never deletes namespaces in production (see
+    `test_undeploy_removes_resources_but_leaves_the_namespace` below) — but this module's own
+    throwaway NAMESPACE exists only for this test run, so the test suite (not the package under
+    test) is responsible for reclaiming it once every test here has finished with it."""
+    yield
+    subprocess.run(
+        ["kubectl", "--context", CONTEXT, "delete", "namespace", NAMESPACE,
+         "--ignore-not-found", "--wait=false"],
+        capture_output=True,
+    )
+
+
 @pytest.fixture(scope="module")
 def product_path(tmp_path_factory):
     root = tmp_path_factory.mktemp("e2ek8s")
