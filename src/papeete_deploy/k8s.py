@@ -84,7 +84,7 @@ _INGRESS_PREFIX_REPLACEMENT = {
 
 
 def _wrapper_kustomization(overlay_dir: Path, image_name: str | None, resolved_version: str | None,
-                            product_name: str, namespace: str) -> Path:
+                            product_name: str, namespace: str, new_name: str | None = None) -> Path:
     """A fresh temp dir holding one kustomization.yaml: resources=[a path to `overlay_dir`,
     relative to the wrapper dir — the actor's own files are never copied or edited, and
     kustomize's root-reference check rejects an absolute one outright], namePrefix=the product's
@@ -102,7 +102,14 @@ def _wrapper_kustomization(overlay_dir: Path, image_name: str | None, resolved_v
     `_ingress_prefix_configmap()`/`_INGRESS_PREFIX_REPLACEMENT` above for the mechanism. An actor's
     own `ingress.yaml` owns only its bare, actor-local path segment; this wrapper generates the
     rest, the same way it already generates `namePrefix` for object names instead of trusting an
-    author to hand-type a product/environment prefix that stays in sync."""
+    author to hand-type a product/environment prefix that stays in sync.
+
+    AND (ADR-PD-0006): `new_name`, when given, becomes the image entry's `newName` alongside
+    `newTag` — the registry an actor's image is actually pulled from. It is generated here for
+    the same reason the ingress prefix is: welding a registry host into an actor's own base
+    manifest would make that manifest deployable to exactly one environment, which is what the
+    wrap-never-edit discipline exists to prevent. None (a local daemon's store) leaves the
+    image's own name untouched."""
     wrapper_dir = Path(tempfile.mkdtemp())
     resource = os.path.relpath(Path(overlay_dir).resolve(), wrapper_dir)
     kustomization = {
@@ -118,7 +125,10 @@ def _wrapper_kustomization(overlay_dir: Path, image_name: str | None, resolved_v
         "replacements": [_INGRESS_PREFIX_REPLACEMENT],
     }
     if image_name is not None:
-        kustomization["images"] = [{"name": image_name, "newTag": resolved_version}]
+        image = {"name": image_name, "newTag": resolved_version}
+        if new_name is not None:
+            image["newName"] = new_name
+        kustomization["images"] = [image]
     (wrapper_dir / "kustomization.yaml").write_text(yaml.safe_dump(kustomization))
     return wrapper_dir
 
@@ -137,12 +147,14 @@ def _render(wrapper_dir: Path) -> str:
 
 
 def apply(context: str, namespace: str, deploy_folder: Path, recipe: str, image_name: str,
-          resolved_version: str, product_name: str) -> None:
-    """ensure_namespace(), then apply the wrapper kustomization's rendered manifest."""
+          resolved_version: str, product_name: str, new_name: str | None = None) -> None:
+    """ensure_namespace(), then apply the wrapper kustomization's rendered manifest. `new_name`
+    is the registry-qualified repository to pull from, or None to leave the manifest's own image
+    name alone — see `_wrapper_kustomization()`."""
     ensure_namespace(context, namespace)
     overlay = _overlay_dir(deploy_folder, recipe)
     wrapper_dir = _wrapper_kustomization(overlay, image_name, resolved_version, product_name,
-                                          namespace)
+                                          namespace, new_name)
     manifest = _render(wrapper_dir)
     _kubectl(context, "-n", namespace, "apply", "-f", "-", input=manifest, text=True)
 
