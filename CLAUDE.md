@@ -39,11 +39,12 @@ will fail.
 
 **Pipeline: resolve → deploy/undeploy, dispatched on `environment.type`.**
 
-- `registry.py` — `Registry` protocol (`list_tags(name) -> list[str]`, newest first).
-  `LocalDockerRegistry` (queries the local Docker daemon's image store) is the only backend
-  actually tested; `AcrRegistry` (shells to `az acr repository show-tags`) is sketched to the same
-  protocol but **not wired into CI and not exercised by any test** — there's no ACR access to
-  verify against. Don't treat it as verified.
+- `registry.py` — `Registry` protocol: `list_tags(name) -> list[str]` (newest first) and
+  `image_name(name) -> str | None` (the registry-qualified repository to pull from, or None when
+  images need no qualifying — `ADR-PD-0006`). `LocalDockerRegistry` (the local Docker daemon's
+  image store) is fully tested. `AcrRegistry`'s `image_name()` is tested offline; its
+  `list_tags()` (shells to `az acr repository show-tags`) is **still not wired into CI and not
+  exercised by any test** — it needs a live registry. Don't treat that half as verified.
 - `deploy.py` — the core module. `resolve_one()`/`resolve_versions()` fold each actor's declared
   query against a `Registry`'s tag list (reusing `papeete_version.npm_range` for range
   satisfaction) — resolution is **registry-based, never git-based** (a deliberate choice, see

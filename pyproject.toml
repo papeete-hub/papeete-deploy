@@ -1,6 +1,6 @@
 [project]
 name = "papeete-deploy"
-version = "0.3.0"
+version = "0.4.0"
 description = "Resolves a papeete-product's declared version queries against a real registry, and deploys the result — starting with local Docker Compose."
 readme = "README.md"
 requires-python = ">=3.11"

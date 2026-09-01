@@ -9,10 +9,11 @@ allowed to know both "where" — which registry an `environment` maps to — and
 live tag list, a Docker daemon's live state — deliberately, because `papeete-product` and
 `papeete-actor` each refuse one or both on purpose (`ADR-PD-0001`).
 
-FRAMED AS DEPLOYMENT, SCOPED NARROWLY FOR NOW. Only a local-Docker registry and local Docker
-Compose orchestration are implemented; an Azure Container Registry backend is sketched but
-unwired (`registry.py`), and multiple environments/targets (k8s, Terraform, DB migrations) are
-explicitly out of scope today — see `ADR-PD-0001`'s consequences.
+FRAMED AS DEPLOYMENT, SCOPED NARROWLY FOR NOW. Local Docker Compose and k8s are both implemented.
+The Azure Container Registry backend composes the repository an image is pulled from
+(`ADR-PD-0006`); its tag listing is still the right shape rather than an exercised one
+(`registry.py`). Terraform and DB migrations remain explicitly out of scope — see `ADR-PD-0001`'s
+consequences.
 """
 
 from importlib.metadata import PackageNotFoundError, version as _version

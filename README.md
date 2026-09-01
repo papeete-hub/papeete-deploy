@@ -51,10 +51,13 @@ from papeete_deploy.registry import LocalDockerRegistry, AcrRegistry
 ```
 
 - **`LocalDockerRegistry`** — every tag the local Docker daemon already has for a name. Fully
-  implemented and tested; the default (`--registry local`).
+  implemented and tested; the default (`--registry local`). It qualifies no image name: a local
+  image is already called what the manifest calls it.
 - **`AcrRegistry`** — every tag an Azure Container Registry has, via `az acr repository
-  show-tags`. Sketched to the same protocol, **not wired into CI, not exercised by any test** — no
-  ACR access from this environment to verify against. `--registry acr --acr-name NAME` selects it.
+  show-tags`, and the repository those tags belong to. `--registry acr --acr-name NAME` selects
+  it; each actor is scoped into the product's own repository path, taken from `product.yaml`'s
+  `product:` field (`ADR-PD-0006`). `image_name()` is covered by tests; `list_tags()` still
+  **is not wired into CI or exercised by any test** — it needs a live registry to mean anything.
 
 Which registry an actor's declared `environment` (required on every `product.yaml`) should map to
 is **not yet automatic** — `--registry`/`--acr-name` are explicit CLI flags for now. See
