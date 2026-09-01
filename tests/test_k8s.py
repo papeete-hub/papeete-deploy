@@ -32,6 +32,35 @@ def test_wrapper_kustomization_sets_resources_images_and_labels(tmp_path):
     }
 
 
+def test_wrapper_kustomization_emits_new_name_alongside_new_tag(tmp_path):
+    overlay_dir = tmp_path / "overlay"
+    overlay_dir.mkdir()
+
+    wrapper_dir = k8s._wrapper_kustomization(
+        overlay_dir, "customer", "0.1.0-alpha-abc0000", "table-service", "develop-ns",
+        "papeetefoundry.azurecr.io/table-service/customer")
+    kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
+
+    # the base manifest still names its container "customer" — newName is what redirects it to a
+    # registry, so the actor's own files never learn which one they were deployed against.
+    assert kustomization["images"] == [{
+        "name": "customer",
+        "newName": "papeetefoundry.azurecr.io/table-service/customer",
+        "newTag": "0.1.0-alpha-abc0000",
+    }]
+
+
+def test_wrapper_kustomization_omits_new_name_when_none_given(tmp_path):
+    overlay_dir = tmp_path / "overlay"
+    overlay_dir.mkdir()
+
+    wrapper_dir = k8s._wrapper_kustomization(overlay_dir, "customer", "0.1.0-alpha-abc0000",
+                                             "table-service", "develop-ns")
+    kustomization = yaml.safe_load((wrapper_dir / "kustomization.yaml").read_text())
+
+    assert kustomization["images"] == [{"name": "customer", "newTag": "0.1.0-alpha-abc0000"}]
+
+
 def test_wrapper_kustomization_omits_images_when_no_image_given(tmp_path):
     overlay_dir = tmp_path / "overlay"
     overlay_dir.mkdir()
