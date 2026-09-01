@@ -214,7 +214,7 @@ def deploy(product_path: Path | str, registry: Registry,
                                product["product"])
         for name, deploy_folder, recipe, _overlay in plan:
             k8s.apply(env["k8sName"], env["name"], deploy_folder, recipe, normalize(name),
-                      resolved[name], product["product"])
+                      resolved[name], product["product"], registry.image_name(name))
         return "k8s", env["name"]
 
     raise ValueError(f"unknown environment.type '{env['type']}'")

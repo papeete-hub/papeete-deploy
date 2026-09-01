@@ -11,9 +11,9 @@ CI step or a human to check where a product would land before spending the time 
 `deploy` resolves the same way, then makes the product real wherever its `environment.type` says:
 `local` starts every actor via Compose; `k8s` applies each actor's own `deploy/k8s/overlays/
 <recipe>`. `undeploy` tears down what `deploy` started. `--registry` defaults to `local` (the
-Docker daemon's own image store); `acr` needs `--acr-name` and is sketched, not exercised
-(`registry.py`). `environment` is not yet used to auto-select `--registry` — see this package's
-`ADR-PD-0001`.
+Docker daemon's own image store); `acr` needs `--acr-name`, and scopes each actor into the
+product's own repository path (`ADR-PD-0006`). `environment` is not yet used to auto-select
+`--registry` — see this package's `ADR-PD-0001`.
 
 For k8s, each actor's own deploy folder is LOCATED, not passed on the command line: a per-actor
 override or a shared source, both optionally set in a `papeete-deploy.yaml` next to `product.yaml`
@@ -25,7 +25,9 @@ import argparse
 import sys
 from pathlib import Path
 
+import yaml
 from papeete_product import product as pp
+from papeete_version.version import normalize_name
 
 from . import __version__
 from . import actor_source
@@ -34,11 +36,16 @@ from .registry import AcrRegistry, LocalDockerRegistry
 
 
 def _registry_from_args(args):
+    """The registry every query resolves against. For ACR, the product's own name becomes the
+    repository prefix its actors live under (`ADR-PD-0006`) — read from the product being
+    deployed rather than taken as a flag, because it is not a separate choice: a product's actors
+    belong in that product's path by definition."""
     if args.registry == "acr":
         if not args.acr_name:
             print("  FAIL --acr-name is required when --registry acr", file=sys.stderr)
             raise SystemExit(2)
-        return AcrRegistry(args.acr_name)
+        product = yaml.safe_load(Path(args.product).read_text())
+        return AcrRegistry(args.acr_name, repository_prefix=normalize_name(product["product"]))
     return LocalDockerRegistry()
 
 

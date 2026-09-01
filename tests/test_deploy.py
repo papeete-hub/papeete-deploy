@@ -12,11 +12,16 @@ from papeete_deploy import deploy, k8s
 
 
 class FakeRegistry:
-    def __init__(self, tags: dict[str, list[str]]):
+    def __init__(self, tags: dict[str, list[str]], image_names: dict[str, str] | None = None):
         self._tags = tags
+        self._image_names = image_names or {}
 
     def list_tags(self, name):
         return self._tags.get(name, [])
+
+    def image_name(self, name):
+        """None unless the case under test cares — a local daemon's store qualifies nothing."""
+        return self._image_names.get(name)
 
 
 def write_product(tmp_path, actors, environment={"type": "local", "name": "local"}):
@@ -186,11 +191,32 @@ def test_deploy_k8s_happy_path_applies_each_actor(tmp_path, monkeypatch):
     result = deploy.deploy(path, registry)
     assert result == ("k8s", "ns")
     assert applied == [
-        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo"),
-        ("ctx", "ns", waiter / "deploy", "develop", "waiter", "0.1.0-alpha-def0000", "demo"),
+        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo",
+         None),
+        ("ctx", "ns", waiter / "deploy", "develop", "waiter", "0.1.0-alpha-def0000", "demo",
+         None),
     ]
     # no environment.recipe declared — no product-level deploy folder is even looked for
     assert applied_product == []
+
+
+def test_deploy_k8s_threads_the_registrys_image_name_through_to_apply(tmp_path, monkeypatch):
+    customer = _actor_folder(tmp_path, "customer", recipe="develop")
+    rows = [{"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"}]
+    path = write_product(tmp_path, rows,
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
+    registry = FakeRegistry(
+        {"customer": ["0.1.0-alpha-abc0000"]},
+        image_names={"customer": "papeetefoundry.azurecr.io/demo/customer"},
+    )
+    applied = []
+    monkeypatch.setattr(k8s, "apply", lambda *a, **kw: applied.append(a))
+
+    deploy.deploy(path, registry)
+    assert applied == [
+        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo",
+         "papeetefoundry.azurecr.io/demo/customer"),
+    ]
 
 
 def test_deploy_k8s_with_environment_recipe_also_applies_product_level_resources(tmp_path,
@@ -211,7 +237,8 @@ def test_deploy_k8s_with_environment_recipe_also_applies_product_level_resources
     assert result == ("k8s", "ns")
     assert applied_product == [("ctx", "ns", tmp_path / "deploy", "develop", "demo")]
     assert applied == [
-        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo"),
+        ("ctx", "ns", customer / "deploy", "develop", "customer", "0.1.0-alpha-abc0000", "demo",
+         None),
     ]
 
 
