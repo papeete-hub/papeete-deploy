@@ -266,7 +266,38 @@ def test_undeploy_k8s_delegates_to_k8s_delete(tmp_path, monkeypatch):
     path = write_product(tmp_path, [row],
                           environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
     calls = []
+    dropped = []
     monkeypatch.setattr(k8s, "delete", lambda *a: calls.append(a))
+    monkeypatch.setattr(k8s, "delete_namespace", lambda *a: dropped.append(a))
 
     deploy.undeploy(path)
     assert calls == [("ctx", "ns", "demo")]
+    # the namespace outlives an undeploy unless asked for — it routinely holds resources this
+    # package never created
+    assert dropped == []
+
+
+def test_undeploy_k8s_deletes_the_namespace_only_when_asked(tmp_path, monkeypatch):
+    row = {"name": "customer", "label": "alpha", "version": "latest", "recipe": "develop"}
+    path = write_product(tmp_path, [row],
+                          environment={"type": "k8s", "name": "ns", "k8sName": "ctx"})
+    calls = []
+    dropped = []
+    monkeypatch.setattr(k8s, "delete", lambda *a: calls.append(a))
+    monkeypatch.setattr(k8s, "delete_namespace", lambda *a: dropped.append(a))
+
+    deploy.undeploy(path, delete_namespace=True)
+    # the labelled sweep still runs first, then the namespace goes
+    assert calls == [("ctx", "ns", "demo")]
+    assert dropped == [("ctx", "ns")]
+
+
+def test_undeploy_local_never_touches_a_namespace(tmp_path, monkeypatch):
+    row = {"name": "customer", "label": "alpha", "version": "latest"}
+    path = write_product(tmp_path, [row])
+    dropped = []
+    monkeypatch.setattr(deploy, "down", lambda *a, **kw: None)
+    monkeypatch.setattr(k8s, "delete_namespace", lambda *a: dropped.append(a))
+
+    deploy.undeploy(path, delete_namespace=True)
+    assert dropped == []

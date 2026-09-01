@@ -220,8 +220,14 @@ def deploy(product_path: Path | str, registry: Registry,
     raise ValueError(f"unknown environment.type '{env['type']}'")
 
 
-def undeploy(product_path: Path | str) -> None:
-    """Tear down what `deploy()` started, wherever `environment` says it went."""
+def undeploy(product_path: Path | str, delete_namespace: bool = False) -> None:
+    """Tear down what `deploy()` started, wherever `environment` says it went.
+
+    `delete_namespace` additionally removes the k8s namespace itself — everything in it, including
+    whatever this package never created. Off by default and opt-in per call (`ADR-PD-0007`): for a
+    long-lived environment the namespace outlives any one product and holds an operator's own
+    Secrets; for an ephemeral one it is the thing that should not survive. Only the caller knows
+    which it is looking at."""
     product = yaml.safe_load(Path(product_path).read_text())
     env = product["environment"]
 
@@ -231,6 +237,8 @@ def undeploy(product_path: Path | str) -> None:
 
     if env["type"] == "k8s":
         k8s.delete(env["k8sName"], env["name"], product["product"])
+        if delete_namespace:
+            k8s.delete_namespace(env["k8sName"], env["name"])
         return
 
     raise ValueError(f"unknown environment.type '{env['type']}'")

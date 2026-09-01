@@ -59,7 +59,10 @@ will fail.
   via `kubectl kustomize --load-restrictor=LoadRestrictionsNone` (not `apply -k` directly — its
   loader rejects the wrapper's cross-directory reference). `ensure_namespace()` creates but never
   deletes; `delete()` tears down only labeled resources (`all,configmap,ingress`), never the
-  namespace.
+  namespace. `delete_namespace()` is the one exception and is never reached by default — only via
+  `undeploy(delete_namespace=True)` / `--delete-namespace`, for an ephemeral instance whose
+  namespace exists to be thrown away (`ADR-PD-0007`). Don't make it the default: a namespace
+  routinely holds resources this package never created.
 - `actor_source.py` — locates each k8s-targeted actor's own **deploy folder** (three tiers, most
   to least specific): a per-actor override (config-file only, `papeete-deploy.yaml`'s
   `actorDeployOverrides`), a global source (CLI flag > env var > config file's

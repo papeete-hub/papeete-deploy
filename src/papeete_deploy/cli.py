@@ -4,13 +4,15 @@
     papeete-deploy deploy     PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME]
                               [--actor-source {local,git}] [--actor-root PATH]
                               [--actor-git-url URL] [--actor-git-ref REF]
-    papeete-deploy undeploy   PRODUCT.YAML
+    papeete-deploy undeploy   PRODUCT.YAML [--delete-namespace]
 
 `resolve` prints each actor's resolved tag, no Docker/kubectl involved — the smaller claim, for a
 CI step or a human to check where a product would land before spending the time to deploy it.
 `deploy` resolves the same way, then makes the product real wherever its `environment.type` says:
 `local` starts every actor via Compose; `k8s` applies each actor's own `deploy/k8s/overlays/
-<recipe>`. `undeploy` tears down what `deploy` started. `--registry` defaults to `local` (the
+<recipe>`. `undeploy` tears down what `deploy` started, and with `--delete-namespace` the
+namespace too (`ADR-PD-0007`) — opt-in, because a namespace routinely holds things this package
+never created. `--registry` defaults to `local` (the
 Docker daemon's own image store); `acr` needs `--acr-name`, and scopes each actor into the
 product's own repository path (`ADR-PD-0006`). `environment` is not yet used to auto-select
 `--registry` — see this package's `ADR-PD-0001`.
@@ -82,8 +84,10 @@ def cmd_deploy(args) -> int:
 
 
 def cmd_undeploy(args) -> int:
-    deploy.undeploy(args.product)
+    deploy.undeploy(args.product, delete_namespace=args.delete_namespace)
     print(f"  ok   {args.product}: undeployed")
+    if args.delete_namespace:
+        print("  ok   namespace deleted")
     return 0
 
 
@@ -129,6 +133,10 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("undeploy", help="tear down what deploy started")
     p.add_argument("product", type=Path, help="path to a product.yaml")
+    p.add_argument("--delete-namespace", dest="delete_namespace", action="store_true",
+                   help="also delete the k8s namespace itself, and everything in it — including "
+                        "resources papeete-deploy never created. For an ephemeral instance whose "
+                        "namespace exists to be thrown away; never for a shared one.")
     p.set_defaults(fn=cmd_undeploy)
 
     args = ap.parse_args(argv)

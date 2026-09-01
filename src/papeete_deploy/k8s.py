@@ -9,8 +9,12 @@ prefixes every Ingress path with `/<product>/<namespace>`, then applies that wra
 never-mutate-the-source discipline `deploy.py`'s `_compose_file()` already uses (via
 `tempfile.NamedTemporaryFile`) for Compose.
 
-NEVER DELETES A NAMESPACE. `ensure_namespace()` creates one if missing and never removes it;
-`delete()` tears down only the resources it (by label) knows it created.
+NEVER DELETES A NAMESPACE BY ACCIDENT. `ensure_namespace()` creates one if missing and never
+removes it; `delete()` tears down only the resources it (by label) knows it created. Removing the
+namespace itself is a separate, explicitly-asked-for act — `delete_namespace()`, reached only via
+`undeploy(delete_namespace=True)` / `--delete-namespace` (`ADR-PD-0007`). The distinction matters:
+a namespace routinely holds things this package never created (an operator's Secrets, another
+tool's resources), and deleting it takes those too.
 """
 import os
 import subprocess
@@ -170,6 +174,15 @@ def apply_product(context: str, namespace: str, deploy_folder: Path, recipe: str
     wrapper_dir = _wrapper_kustomization(overlay, None, None, product_name, namespace)
     manifest = _render(wrapper_dir)
     _kubectl(context, "-n", namespace, "apply", "-f", "-", input=manifest, text=True)
+
+
+def delete_namespace(context: str, namespace: str) -> None:
+    """Delete `namespace` and everything in it, including resources this package never created.
+
+    Only ever called when a caller has explicitly asked for it (`ADR-PD-0007`) — an ephemeral
+    instance whose whole namespace exists to be thrown away. Idempotent: a namespace that is
+    already gone is not an error, so a repeated undeploy still succeeds."""
+    _kubectl(context, "delete", "namespace", namespace, "--ignore-not-found")
 
 
 def delete(context: str, namespace: str, product_name: str) -> None:

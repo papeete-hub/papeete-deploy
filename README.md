@@ -12,7 +12,7 @@ papeete-deploy resolve    PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME
 papeete-deploy deploy     PRODUCT.YAML [--registry {local,acr}] [--acr-name NAME]
                           [--actor-source {local,git}] [--actor-root PATH]
                           [--actor-git-url URL] [--actor-git-ref REF]
-papeete-deploy undeploy   PRODUCT.YAML
+papeete-deploy undeploy   PRODUCT.YAML [--delete-namespace]
 ```
 
 `resolve` prints each actor's resolved tag, no Docker/kubectl involved — the smaller claim, useful
@@ -200,6 +200,9 @@ papeete-deploy undeploy examples/productDocker.yaml
 papeete-deploy deploy examples/productK8s.yaml
 kubectl -n papeete-deploy-example get deploy,svc -l papeete-deploy/product=pd-table-service
 papeete-deploy undeploy examples/productK8s.yaml
+
+# an ephemeral instance, whose whole namespace exists to be thrown away (ADR-PD-0007):
+papeete-deploy undeploy examples/productK8s.yaml --delete-namespace
 ```
 
 `tests/test_e2e_deploy.py` spawns `productDocker.yaml` for real via Docker Compose and asserts
